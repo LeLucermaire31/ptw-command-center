@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0F172A">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIlBUVyBDb21tYW5kIENlbnRlciIsCiAgInNob3J0X25hbWUiOiAiUFRXIiwKICAic3RhcnRfdXJsIjogIkV4ZXJjaXNlLUNvYWNoLmh0bWwiLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMwRjE3MkEiLAogICJ0aGVtZV9jb2xvciI6ICIjMEYxNzJBIiwKICAiaWNvbnMiOiBbewogICAgInNyYyI6ICJkYXRhOmltYWdlL3N2Zyt4bWwsPHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxMDAgMTAwJz48dGV4dCB5PScuOWVtJyBmb250LXNpemU9JzkwJz7wn4+L77iPPC90ZXh0Pjwvc3ZnPiIsCiAgICAic2l6ZXMiOiAiMTkyeDE5MiIsCiAgICAidHlwZSI6ICJpbWFnZS9zdmcreG1sIgogIH1dCn0=">
+  <title>PTW Command Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ptw: {
+              dark: '#0F172A',
+              darker: '#1E293B',
+              card: '#FFFFFF',
+              accent: '#1A73E8',
+              success: '#34C759',
+              warning: '#F59E0B',
+              danger: '#EF4444',
+            }
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['SF Mono', 'Fira Code', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    * { -webkit-tap-highlight-color: transparent; }
+    body { background: #F1F5F9; overscroll-behavior: none; }
+    input[type="number"] { -moz-appearance: textfield; }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900 antialiased">
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    // === CONSTANTS ===
+
+    const RPE_TABLE = [
+      // RPE 7,  7.5,  8,    8.5,  9,    9.5,  10
+      [0.892, 0.871, 0.850, 0.829, 0.808, 0.787, 0.766], // 1 rep
+      [0.894, 0.873, 0.852, 0.831, 0.810, 0.789, 0.768], // 2 reps
+      [0.896, 0.875, 0.854, 0.833, 0.812, 0.791, 0.770], // 3 reps
+      [0.898, 0.877, 0.856, 0.835, 0.814, 0.793, 0.772], // 4 reps
+      [0.900, 0.879, 0.858, 0.837, 0.816, 0.795, 0.774], // 5 reps
+      [0.902, 0.881, 0.860, 0.839, 0.818, 0.797, 0.776], // 6 reps
+    ];
+
+    const RPE_LABELS = [7, 7.5, 8, 8.5, 9, 9.5, 10];
+
+    const LIFT_CONFIG = {
+      squat:    { id: "squat",    label: "深蹲",    type: "lower", p1Sets: 2, p2HeavySets: 3, p2LightSets: 2, p2LightVariant: "pause" },
+      bench:    { id: "bench",    label: "卧推",    type: "upper", p1Sets: 3, p2HeavySets: 5, p2LightSets: 2, p2LightVariant: "pause" },
+      deadlift: { id: "deadlift", label: "硬拉",    type: "lower", p1Sets: 1, p2HeavySets: 2, p2LightSets: 0 },
+    };
+
+    const WARMUP_RATIOS = [
+      { pct: 0.50, reps: 8 },
+      { pct: 0.70, reps: 5 },
+      { pct: 0.80, reps: 3 },
+      { pct: 0.90, reps: 2 },
+    ];
+
+    // [phase][liftType][tier] → { weightDelta, targetMinRepsDelta }
+    const PROGRESSION = {
+      1: {
+        lower: {
+          min:    { weightDelta: 0,   targetMinRepsDelta: 1 },
+          mid:    { weightDelta: 2.5, targetMinRepsDelta: 0 },
+          maxed:  { weightDelta: 5.0, targetMinRepsDelta: 0 },
+        },
+        upper: {
+          min:    { weightDelta: 0,   targetMinRepsDelta: 1 },
+          mid:    { weightDelta: 1.0, targetMinRepsDelta: 0 },
+          maxed:  { weightDelta: 2.5, targetMinRepsDelta: 0 },
+        },
+      },
+      2: {
+        lower: {
+          min:    { weightDelta: 0,   targetMinRepsDelta: 1 },
+          mid:    { weightDelta: 1.0, targetMinRepsDelta: 0 },
+          maxed:  { weightDelta: 2.5, targetMinRepsDelta: 0 },
+        },
+        upper: {
+          min:    { weightDelta: 0,   targetMinRepsDelta: 1 },
+          mid:    { weightDelta: 0,   targetMinRepsDelta: 2 },
+          maxed:  { weightDelta: 1.0, targetMinRepsDelta: 0 },
+        },
+      },
+    };
+
+    const PHASE_LABELS = { 1: "P1 纯新手", 2: "P2 进阶新手", 3: "P3 中级" };
+    const TIER_LABELS = { missed: "未达标", min: "及格", mid: "正常", maxed: "拉满" };
+    const SESSION_TYPE_LABELS = { P1: "恒定日", heavy: "重日", light: "轻日" };
+
+    const DEFAULT_LIFTS = {
+      squat:    { id: "squat",    phase: 1, currentWeight: 20.0, targetMinReps: 6,  e1rm: null, sessionCount: 0 },
+      bench:    { id: "bench",    phase: 1, currentWeight: 20.0, targetMinReps: 9,  e1rm: null, sessionCount: 0 },
+      deadlift: { id: "deadlift", phase: 1, currentWeight: 20.0, targetMinReps: 3,  e1rm: null, sessionCount: 0 },
+    };
+
+    const DEFAULT_META = { onboardingComplete: false };
+
+    // === ENGINE ===
+
+    function roundToAvailableWeight(weight) {
+      return Math.floor(weight * 2) / 2;
+    }
+
+    function getTotalReps(sets) {
+      return sets.reduce((sum, s) => sum + s.reps, 0);
+    }
+
+    function getSetsForPhase(phase, sessionType, liftId) {
+      const cfg = LIFT_CONFIG[liftId];
+      if (phase === 1) return cfg.p1Sets;
+      if (sessionType === "light") return cfg.p2LightSets;
+      return cfg.p2HeavySets;
+    }
+
+    function getRepTier(totalReps, targetMinReps, maxReps) {
+      if (totalReps < targetMinReps) return "missed";
+      if (totalReps === targetMinReps) return "min";
+      if (totalReps < maxReps) return "mid";
+      return "maxed";
+    }
+
+    function getMaxReps(sets) {
+      return sets * 6;
+    }
+
+    function getMinReps(sets) {
+      return sets * 3;
+    }
+
+    function calcProgression(phase, totalReps, currentWeight, targetMinReps, liftType, sets) {
+      const maxReps = getMaxReps(sets);
+      const tier = getRepTier(totalReps, targetMinReps, maxReps);
+
+      const matrix = PROGRESSION[phase] && PROGRESSION[phase][liftType];
+      if (!matrix) {
+        return { newWeight: currentWeight, newTargetMinReps: targetMinReps, stalled: false, tier };
+      }
+
+      const rule = matrix[tier];
+      if (!rule) {
+        return { newWeight: currentWeight, newTargetMinReps: targetMinReps, stalled: false, tier };
+      }
+
+      const newWeight = roundToAvailableWeight(currentWeight + rule.weightDelta);
+      let newTargetMinReps;
+      if (rule.weightDelta === 0) {
+        newTargetMinReps = targetMinReps + rule.targetMinRepsDelta;
+      } else {
+        newTargetMinReps = getMinReps(sets);
+      }
+
+      // Safety cap: never exceed absolute max reps
+      newTargetMinReps = Math.min(newTargetMinReps, maxReps);
+
+      return { newWeight, newTargetMinReps, stalled: false, tier };
+    }
+
+    function calcPhaseTransition(lift, sets) {
+      const newPhase = Math.min(lift.phase + 1, 3);
+      const newSets = newPhase === 1
+        ? LIFT_CONFIG[lift.id].p1Sets
+        : LIFT_CONFIG[lift.id].p2HeavySets;
+      return {
+        ...lift,
+        phase: newPhase,
+        currentWeight: roundToAvailableWeight(lift.currentWeight * 0.90),
+        targetMinReps: getMinReps(newSets),
+        sessionCount: 0,
+      };
+    }
+
+    function getSessionType(phase, sessionCount) {
+      if (phase === 1) return "P1";
+      return (sessionCount % 3 === 2) ? "light" : "heavy";
+    }
+
+    function getSessionExercises(phase, sessionType) {
+      const allIds = ["squat", "bench", "deadlift"];
+      if (sessionType === "light") {
+        return [
+          { ...LIFT_CONFIG.squat, variant: "pause" },
+          { ...LIFT_CONFIG.bench, variant: "pause" },
+        ].filter(ex => LIFT_CONFIG[ex.id].p2LightSets > 0);
+      }
+      return allIds.map(id => ({
+        ...LIFT_CONFIG[id],
+        sets: phase === 1 ? LIFT_CONFIG[id].p1Sets : LIFT_CONFIG[id].p2HeavySets,
+      }));
+    }
+
+    function calcWarmup(topWeight) {
+      return WARMUP_RATIOS.map(({ pct, reps }) => ({
+        pct: Math.round(pct * 100),
+        weight: roundToAvailableWeight(topWeight * pct),
+        reps,
+      }));
+    }
+
+    function calcE1RM(weight, reps, rpe) {
+      const repIdx = Math.min(reps - 1, 5);
+      const rpeIdx = Math.round((rpe - 7) * 2);
+      const clampedRpeIdx = Math.max(0, Math.min(rpeIdx, 6));
+      const coeff = RPE_TABLE[repIdx][clampedRpeIdx];
+      return weight / coeff;
+    }
+
+    function hasStall(sets) {
+      return sets.some(s => s.reps < 3);
+    }
+
+    // === STORAGE (Capacitor-ready abstraction) ===
+
+    const storage = {
+      get: (key) => {
+        try { return JSON.parse(localStorage.getItem("ptw_" + key)); }
+        catch { return null; }
+      },
+      set: (key, val) => {
+        localStorage.setItem("ptw_" + key, JSON.stringify(val));
+      },
+    };
+
+    // === STORE ===
+
+    const { useState, useEffect, useCallback, createContext, useContext } = React;
+
+    function useStore() {
+      const [lifts, setLifts] = useState(() => storage.get("lifts") || { ...DEFAULT_LIFTS });
+      const [history, setHistory] = useState(() => storage.get("history") || []);
+      const [meta, setMeta] = useState(() => storage.get("meta") || { ...DEFAULT_META });
+
+      // Persist
+      useEffect(() => { storage.set("lifts", lifts); }, [lifts]);
+      useEffect(() => { storage.set("history", history); }, [history]);
+      useEffect(() => { storage.set("meta", meta); }, [meta]);
+
+      // Lift mutations
+      const updateLift = useCallback((id, updater) => {
+        setLifts(prev => ({ ...prev, [id]: typeof updater === "function" ? updater(prev[id]) : updater }));
+      }, []);
+
+      const completeOnboarding = useCallback((initialWeights) => {
+        setLifts(prev => {
+          const next = { ...prev };
+          for (const [id, weight] of Object.entries(initialWeights)) {
+            const cfg = LIFT_CONFIG[id];
+            const sets = cfg.p1Sets;
+            next[id] = {
+              ...next[id],
+              currentWeight: roundToAvailableWeight(parseFloat(weight)),
+              targetMinReps: getMinReps(sets),
+              phase: 1,
+              sessionCount: 0,
+            };
+          }
+          return next;
+        });
+        setMeta({ onboardingComplete: true });
+      }, []);
+
+      const resetOnboarding = useCallback(() => {
+        setMeta({ onboardingComplete: false });
+      }, []);
+
+      // Process a training session
+      const submitSession = useCallback((sessionData) => {
+        const entry = {
+          id: Date.now().toString(36),
+          date: new Date().toISOString(),
+          sessionType: sessionData.sessionType,
+          squat: sessionData.squat || null,
+          bench: sessionData.bench || null,
+          deadlift: sessionData.deadlift || null,
+        };
+
+        setHistory(prev => [entry, ...prev]);
+
+        // Update lifts
+        for (const liftId of ["squat", "bench", "deadlift"]) {
+          const data = sessionData[liftId];
+          if (!data) continue;
+
+          setLifts(prev => {
+            const lift = prev[liftId];
+            if (!lift) return prev;
+
+            const cfg = LIFT_CONFIG[liftId];
+            const sesType = sessionData.sessionType;
+            const sets = getSetsForPhase(lift.phase, sesType, liftId);
+            const totalReps = getTotalReps(data.sets);
+
+            // Light day: no progression
+            if (sesType === "light") {
+              return { ...prev, [liftId]: { ...lift, sessionCount: lift.sessionCount + 1 } };
+            }
+
+            // Check stall
+            if (hasStall(data.sets)) {
+              return { ...prev, [liftId]: calcPhaseTransition(lift, sets) };
+            }
+
+            // Normal progression
+            const result = calcProgression(
+              lift.phase, totalReps, lift.currentWeight,
+              lift.targetMinReps, cfg.type, sets
+            );
+
+            return {
+              ...prev,
+              [liftId]: {
+                ...lift,
+                currentWeight: result.newWeight,
+                targetMinReps: result.newTargetMinReps,
+                sessionCount: lift.sessionCount + 1,
+              },
+            };
+          });
+        }
+      }, []);
+
+      // Edit history entry
+      const updateHistoryEntry = useCallback((entryId, updatedEntry) => {
+        setHistory(prev => prev.map(e => e.id === entryId ? updatedEntry : e));
+      }, []);
+
+      // Delete history entry
+      const deleteHistoryEntry = useCallback((entryId) => {
+        setHistory(prev => prev.filter(e => e.id !== entryId));
+      }, []);
+
+      return {
+        lifts, history, meta,
+        updateLift, completeOnboarding, resetOnboarding,
+        submitSession, updateHistoryEntry, deleteHistoryEntry,
+      };
+    }
+
+    // === COMPONENTS ===
+
+    function Onboarding({ onComplete }) {
+      const [weights, setWeights] = useState({ squat: "", bench: "", deadlift: "" });
+      const [errors, setErrors] = useState({});
+
+      const validate = () => {
+        const errs = {};
+        for (const id of ["squat", "bench", "deadlift"]) {
+          const v = parseFloat(weights[id]);
+          if (isNaN(v) || v < 1) errs[id] = "请输入有效重量 (≥1 kg)";
+          else if (v > 500) errs[id] = "重量过大";
+        }
+        setErrors(errs);
+        return Object.keys(errs).length === 0;
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!validate()) return;
+        onComplete({
+          squat: parseFloat(weights.squat),
+          bench: parseFloat(weights.bench),
+          deadlift: parseFloat(weights.deadlift),
+        });
+      };
+
+      const updateWeight = (id, value) => {
+        setWeights(prev => ({ ...prev, [id]: value }));
+        setErrors(prev => ({ ...prev, [id]: null }));
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center px-6 py-12">
+          <div className="w-full max-w-sm">
+            <div className="text-center mb-8">
+              <div className="text-4xl mb-3">🏋️</div>
+              <h1 className="text-2xl font-bold text-slate-900">PTW 2.0</h1>
+              <p className="text-slate-500 mt-1">Training Command Center</p>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <h2 className="text-lg font-semibold mb-4">录入起始重量</h2>
+              <p className="text-sm text-slate-500 mb-5">请输入你最近一次训练中完成 3-6 次的重量</p>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {["squat", "bench", "deadlift"].map(id => (
+                  <div key={id}>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      {LIFT_CONFIG[id].label}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={weights[id]}
+                        onChange={e => updateWeight(id, e.target.value)}
+                        placeholder={id === "squat" ? "例: 60" : id === "bench" ? "例: 40" : "例: 80"}
+                        className={`w-full px-4 py-3 rounded-xl border text-lg font-mono
+                          ${errors[id] ? "border-red-400 bg-red-50" : "border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"}
+                          outline-none transition`}
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">kg</span>
+                    </div>
+                    {errors[id] && <p className="text-red-500 text-xs mt-1">{errors[id]}</p>}
+                  </div>
+                ))}
+
+                <button
+                  type="submit"
+                  className="w-full py-3.5 bg-slate-900 text-white font-semibold rounded-xl
+                           hover:bg-slate-800 active:scale-[0.98] transition mt-6"
+                >
+                  开始训练
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function PhaseBadge({ phase }) {
+      const colors = { 1: "bg-blue-100 text-blue-700", 2: "bg-emerald-100 text-emerald-700", 3: "bg-purple-100 text-purple-700" };
+      return (
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors[phase] || colors[3]}`}>
+          {PHASE_LABELS[phase] || PHASE_LABELS[3]}
+        </span>
+      );
+    }
+
+    function RpeColorBadge({ rpe }) {
+      if (rpe == null) return null;
+      let color;
+      if (rpe <= 7.5) color = "bg-green-100 text-green-700";
+      else if (rpe <= 8.5) color = "bg-blue-100 text-blue-700";
+      else if (rpe <= 9) color = "bg-yellow-100 text-yellow-700";
+      else if (rpe <= 9.5) color = "bg-orange-100 text-orange-700";
+      else color = "bg-red-100 text-red-700";
+      return <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${color}`}>RPE {rpe}</span>;
+    }
+
+    function ProgressBadge({ current, previous }) {
+      if (previous == null) return null;
+      const diff = current - previous;
+      if (diff === 0) return <span className="text-xs text-slate-400">→ 0</span>;
+      const up = diff > 0;
+      return (
+        <span className={`text-xs font-mono ${up ? "text-emerald-600" : "text-red-500"}`}>
+          {up ? "↑" : "↓"} {Math.abs(diff).toFixed(1)} kg
+        </span>
+      );
+    }
+
+    function LiftCard({ lift, previousWeight }) {
+      const cfg = LIFT_CONFIG[lift.id];
+      const sessionType = getSessionType(lift.phase, lift.sessionCount);
+      const maxReps = getMaxReps(getSetsForPhase(lift.phase, sessionType, lift.id));
+
+      return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wide">{cfg.label}</div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <PhaseBadge phase={lift.phase} />
+                {sessionType !== "P1" && (
+                  <span className="text-xs text-slate-400">{SESSION_TYPE_LABELS[sessionType]}</span>
+                )}
+              </div>
+            </div>
+            <ProgressBadge current={lift.currentWeight} previous={previousWeight} />
+          </div>
+
+          <div className="text-3xl font-bold text-slate-900 font-mono tracking-tight">
+            {lift.currentWeight.toFixed(1)}
+            <span className="text-base font-normal text-slate-400 ml-1">kg</span>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-3 text-xs text-slate-500">
+            <div>
+              <span className="block text-slate-400">目标次数</span>
+              <span className="font-mono font-semibold text-slate-700">{lift.targetMinReps} / {maxReps}</span>
+            </div>
+            <div>
+              <span className="block text-slate-400">阶段训练</span>
+              <span className="font-mono font-semibold text-slate-700">{lift.sessionCount} 次</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Dashboard({ lifts, history, onStartSession }) {
+      const prevWeights = {};
+      if (history.length > 0) {
+        for (const id of ["squat", "bench", "deadlift"]) {
+          const prevEntry = history.find(e => e[id] != null);
+          if (prevEntry) prevWeights[id] = prevEntry[id].sets[0]?.weight;
+        }
+      }
+
+      return (
+        <div className="px-4 py-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">训练面板</h2>
+          </div>
+
+          {["squat", "bench", "deadlift"].map(id => (
+            <LiftCard key={id} lift={lifts[id]} previousWeight={prevWeights[id]} />
+          ))}
+
+          <button
+            onClick={onStartSession}
+            className="w-full py-3.5 bg-slate-900 text-white font-semibold rounded-xl
+                     hover:bg-slate-800 active:scale-[0.98] transition mt-2"
+          >
+            开始今天训练
+          </button>
+        </div>
+      );
+    }
+
+    function SessionPlanner({ lifts, onSubmit }) {
+      const [tab, setTab] = useState("plan");
+
+      const firstLift = lifts.squat;
+      const sessionType = getSessionType(firstLift.phase, firstLift.sessionCount);
+      const exercises = getSessionExercises(firstLift.phase, sessionType);
+
+      const exerciseInfo = exercises.map(ex => {
+        const lift = lifts[ex.id];
+        const cfg = LIFT_CONFIG[ex.id];
+        const sets = getSetsForPhase(lift.phase, sessionType, ex.id);
+        const warmups = calcWarmup(lift.currentWeight);
+        return {
+          ...ex,
+          lift,
+          sets,
+          warmups,
+          targetMinReps: lift.targetMinReps,
+          maxReps: getMaxReps(sets),
+        };
+      });
+
+      return (
+        <div className="px-4 py-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-slate-900 text-white text-sm font-semibold px-3 py-1.5 rounded-lg">
+              {SESSION_TYPE_LABELS[sessionType]}
+            </div>
+            <h2 className="text-xl font-bold text-slate-900">今日训练</h2>
+          </div>
+
+          <div className="flex bg-slate-200 rounded-xl p-1">
+            <button
+              onClick={() => setTab("plan")}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition ${tab === "plan" ? "bg-white shadow-sm" : "text-slate-500"}`}
+            >训练计划</button>
+            <button
+              onClick={() => setTab("entry")}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition ${tab === "entry" ? "bg-white shadow-sm" : "text-slate-500"}`}
+            >录入数据</button>
+          </div>
+
+          {tab === "plan" ? (
+            <PlanView exerciseInfo={exerciseInfo} sessionType={sessionType} />
+          ) : (
+            <DataEntryForm
+              exerciseInfo={exerciseInfo}
+              sessionType={sessionType}
+              onSubmit={onSubmit}
+            />
+          )}
+        </div>
+      );
+    }
+
+    function PlanView({ exerciseInfo, sessionType }) {
+      return (
+        <div className="space-y-4">
+          {exerciseInfo.map(ex => (
+            <div key={ex.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-slate-900">
+                  {LIFT_CONFIG[ex.id].label}
+                  {ex.variant === "pause" && <span className="text-amber-600 text-sm font-normal"> · 停顿3秒</span>}
+                </h3>
+                <span className="text-sm text-slate-400">{ex.sets} 组 × 3-6 次</span>
+              </div>
+
+              <div className="text-2xl font-bold font-mono text-slate-900 mb-3">
+                {ex.lift.currentWeight.toFixed(1)} kg
+              </div>
+
+              <div className="text-xs text-slate-500 mb-2">
+                目标: {ex.targetMinReps} / {ex.maxReps} 总次数
+              </div>
+
+              <details className="mt-3">
+                <summary className="text-sm text-blue-600 cursor-pointer font-medium">查看热身组</summary>
+                <table className="w-full mt-2 text-xs">
+                  <thead>
+                    <tr className="text-slate-400 border-b border-slate-100">
+                      <th className="text-left py-1.5">%</th>
+                      <th className="text-right py-1.5">重量</th>
+                      <th className="text-right py-1.5">次数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ex.warmups.map((wu, i) => (
+                      <tr key={i} className="border-b border-slate-50">
+                        <td className="py-1.5 text-slate-500">{wu.pct}%</td>
+                        <td className="py-1.5 text-right font-mono">{wu.weight.toFixed(1)} kg</td>
+                        <td className="py-1.5 text-right">{wu.reps}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            </div>
+          ))}
+
+          {sessionType === "light" && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+              轻日训练：重量不变，不触发加重/熔断。专注动作质量。
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function DataEntryForm({ exerciseInfo, sessionType, onSubmit }) {
+      const [entries, setEntries] = useState(() => {
+        const init = {};
+        for (const ex of exerciseInfo) {
+          init[ex.id] = {
+            sets: Array.from({ length: ex.sets }, () => ({ weight: ex.lift.currentWeight, reps: "", rpe: "" })),
+          };
+        }
+        return init;
+      });
+
+      const updateSet = (liftId, setIdx, field, value) => {
+        setEntries(prev => {
+          const next = { ...prev };
+          const sets = [...next[liftId].sets];
+          sets[setIdx] = { ...sets[setIdx], [field]: field === "weight" ? value : value };
+          next[liftId] = { ...next[liftId], sets };
+          return next;
+        });
+      };
+
+      const handleSubmit = () => {
+        const sessionData = { sessionType };
+        for (const ex of exerciseInfo) {
+          const raw = entries[ex.id];
+          if (!raw) continue;
+          const sets = raw.sets.map((s, i) => ({
+            set: i + 1,
+            weight: parseFloat(s.weight) || ex.lift.currentWeight,
+            reps: parseInt(s.reps) || 0,
+            rpe: s.rpe !== "" ? parseFloat(s.rpe) : null,
+          }));
+          const totalReps = getTotalReps(sets);
+          const stalled = sessionType !== "light" && hasStall(sets);
+          const tier = sessionType !== "light"
+            ? getRepTier(totalReps, ex.targetMinReps, ex.maxReps)
+            : null;
+          sessionData[ex.id] = { sets, totalReps, stalled, tier };
+        }
+        onSubmit(sessionData);
+      };
+
+      const allValid = exerciseInfo.every(ex => {
+        const raw = entries[ex.id];
+        if (!raw) return true;
+        return raw.sets.every(s => {
+          const reps = parseInt(s.reps);
+          return !isNaN(reps) && reps >= 0;
+        });
+      });
+
+      return (
+        <div className="space-y-5">
+          {exerciseInfo.map(ex => {
+            const raw = entries[ex.id];
+            if (!raw) return null;
+            const totalReps = getTotalReps(raw.sets.map((s) => ({ reps: parseInt(s.reps) || 0 })));
+
+            return (
+              <div key={ex.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-slate-900">{LIFT_CONFIG[ex.id].label}</h3>
+                  <span className="text-sm text-slate-400">
+                    目标: {ex.targetMinReps}/{ex.maxReps} · 已完成: {totalReps}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {raw.sets.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400 w-8">组{i + 1}</span>
+                      <input
+                        type="text" inputMode="decimal"
+                        value={s.weight}
+                        onChange={e => updateSet(ex.id, i, "weight", e.target.value)}
+                        className="w-20 px-2 py-2 rounded-lg border border-slate-200 text-sm font-mono text-center
+                                 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
+                      />
+                      <span className="text-xs text-slate-400">kg</span>
+                      <input
+                        type="text" inputMode="numeric"
+                        value={s.reps}
+                        onChange={e => updateSet(ex.id, i, "reps", e.target.value)}
+                        placeholder="次数"
+                        className="w-16 px-2 py-2 rounded-lg border border-slate-200 text-sm font-mono text-center
+                                 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
+                      />
+                      <span className="text-xs text-slate-400">次</span>
+                      <select
+                        value={s.rpe}
+                        onChange={e => updateSet(ex.id, i, "rpe", e.target.value)}
+                        className="flex-1 px-1 py-2 rounded-lg border border-slate-200 text-xs bg-white outline-none"
+                      >
+                        <option value="">RPE</option>
+                        {RPE_LABELS.map(v => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                      {s.rpe !== "" && <RpeColorBadge rpe={parseFloat(s.rpe)} />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          <button
+            onClick={handleSubmit}
+            disabled={!allValid}
+            className={`w-full py-3.5 font-semibold rounded-xl transition active:scale-[0.98]
+              ${allValid ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}
+          >
+            完成训练
+          </button>
+        </div>
+      );
+    }
+
+    function HistoryLog({ history, lifts, onDelete, onEdit }) {
+      const [expanded, setExpanded] = useState(null);
+      const [editing, setEditing] = useState(null);
+      const [editData, setEditData] = useState(null);
+
+      const today = new Date().toISOString().slice(0, 10);
+
+      const startEdit = (entry) => {
+        setEditing(entry.id);
+        const clone = {};
+        for (const liftId of ["squat", "bench", "deadlift"]) {
+          if (entry[liftId]) {
+            clone[liftId] = {
+              sets: entry[liftId].sets.map(s => ({ ...s })),
+            };
+          }
+        }
+        setEditData(clone);
+      };
+
+      const cancelEdit = () => {
+        setEditing(null);
+        setEditData(null);
+      };
+
+      const saveEdit = () => {
+        if (!editData || !editing) return;
+        const entry = history.find(e => e.id === editing);
+        if (!entry) return;
+
+        const updated = { ...entry };
+        for (const liftId of ["squat", "bench", "deadlift"]) {
+          if (editData[liftId]) {
+            const totalReps = getTotalReps(editData[liftId].sets);
+            updated[liftId] = {
+              ...editData[liftId],
+              totalReps,
+              stalled: hasStall(editData[liftId].sets),
+              tier: getRepTier(
+                totalReps,
+                lifts[liftId].targetMinReps,
+                getMaxReps(getSetsForPhase(lifts[liftId].phase, entry.sessionType, liftId))
+              ),
+            };
+          }
+        }
+        onEdit(editing, updated);
+        setEditing(null);
+        setEditData(null);
+      };
+
+      const updateEditSet = (liftId, setIdx, field, value) => {
+        setEditData(prev => {
+          const next = { ...prev };
+          const sets = [...next[liftId].sets];
+          sets[setIdx] = { ...sets[setIdx], [field]: field === "weight" ? value : value };
+          next[liftId] = { ...next[liftId], sets };
+          return next;
+        });
+      };
+
+      return (
+        <div className="px-4 py-6 space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">训练日志</h2>
+
+          {history.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <div className="text-4xl mb-3">📋</div>
+              <p>暂无训练记录</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {history.map(entry => {
+                const isToday = entry.date.slice(0, 10) === today;
+                const dateStr = new Date(entry.date).toLocaleDateString("zh-CN", {
+                  month: "short", day: "numeric", weekday: "short",
+                });
+
+                return (
+                  <div key={entry.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div
+                      className="flex items-center justify-between p-4 cursor-pointer"
+                      onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-semibold text-slate-700">
+                          {dateStr}
+                          {isToday && <span className="text-blue-500 ml-1">· 今天</span>}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium
+                          ${entry.sessionType === "heavy" ? "bg-slate-100 text-slate-700" :
+                            entry.sessionType === "light" ? "bg-amber-100 text-amber-700" :
+                            "bg-blue-100 text-blue-700"}`}
+                        >
+                          {SESSION_TYPE_LABELS[entry.sessionType] || entry.sessionType}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={e => { e.stopPropagation(); startEdit(entry); }}
+                          className="text-xs text-blue-500 px-2 py-1 hover:bg-blue-50 rounded-lg"
+                        >编辑</button>
+                        <button
+                          onClick={e => { e.stopPropagation(); if (confirm("删除此条记录?")) onDelete(entry.id); }}
+                          className="text-xs text-red-500 px-2 py-1 hover:bg-red-50 rounded-lg"
+                        >删除</button>
+                        <span className="text-slate-300">{expanded === entry.id ? "▲" : "▼"}</span>
+                      </div>
+                    </div>
+
+                    {(expanded === entry.id || editing === entry.id) && (
+                      <div className="px-4 pb-4 border-t border-slate-100 pt-3 space-y-3">
+                        {["squat", "bench", "deadlift"].map(liftId => {
+                          const data = editing === entry.id ? editData?.[liftId] : entry[liftId];
+                          if (!data) return null;
+                          const isEditing = editing === entry.id;
+
+                          return (
+                            <div key={liftId}>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-semibold text-slate-500">{LIFT_CONFIG[liftId].label}</span>
+                                {!isEditing && (
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-xs px-1.5 py-0.5 rounded ${data.stalled ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-500"}`}>
+                                      {data.stalled ? "熔断" : TIER_LABELS[data.tier] || data.tier}
+                                    </span>
+                                    <span className="text-xs text-slate-400">{data.totalReps} 次</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-slate-400">
+                                    <th className="text-left py-1 font-normal">组</th>
+                                    <th className="text-right py-1 font-normal">重量</th>
+                                    <th className="text-right py-1 font-normal">次数</th>
+                                    <th className="text-right py-1 font-normal">RPE</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {data.sets.map((s, i) => (
+                                    <tr key={i} className="border-t border-slate-50">
+                                      <td className="py-1">{i + 1}</td>
+                                      <td className="py-1 text-right font-mono">
+                                        {isEditing ? (
+                                          <input
+                                            type="number" step="0.5"
+                                            value={s.weight}
+                                            onChange={e => updateEditSet(liftId, i, "weight", e.target.value)}
+                                            className="w-16 text-right px-1 py-0.5 border border-slate-200 rounded text-xs font-mono"
+                                          />
+                                        ) : (
+                                          `${s.weight.toFixed(1)} kg`
+                                        )}
+                                      </td>
+                                      <td className="py-1 text-right font-mono">
+                                        {isEditing ? (
+                                          <input
+                                            type="number" min="1"
+                                            value={s.reps}
+                                            onChange={e => updateEditSet(liftId, i, "reps", e.target.value)}
+                                            className="w-12 text-right px-1 py-0.5 border border-slate-200 rounded text-xs font-mono"
+                                          />
+                                        ) : (
+                                          s.reps
+                                        )}
+                                      </td>
+                                      <td className="py-1 text-right">
+                                        {isEditing ? (
+                                          <select
+                                            value={s.rpe ?? ""}
+                                            onChange={e => updateEditSet(liftId, i, "rpe", e.target.value ? parseFloat(e.target.value) : null)}
+                                            className="text-xs border border-slate-200 rounded px-1 py-0.5"
+                                          >
+                                            <option value="">-</option>
+                                            {RPE_LABELS.map(v => <option key={v} value={v}>{v}</option>)}
+                                          </select>
+                                        ) : (
+                                          s.rpe != null ? <RpeColorBadge rpe={s.rpe} /> : "-"
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+
+                              {isEditing && (
+                                <div className="flex gap-2 mt-2">
+                                  <button onClick={saveEdit} className="text-xs bg-emerald-600 text-white px-3 py-1 rounded-lg">保存</button>
+                                  <button onClick={cancelEdit} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-lg">取消</button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function ExportButton({ lifts }) {
+      const handleExport = () => {
+        const history = storage.get("history") || [];
+        const meta = storage.get("meta") || {};
+        const data = { lifts, history, meta, exportDate: new Date().toISOString() };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "ptw-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      return (
+        <button
+          onClick={handleExport}
+          className="flex-1 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-xl
+                   hover:bg-slate-50 active:scale-[0.98] transition"
+        >导出数据</button>
+      );
+    }
+
+    function ImportButton() {
+      const fileRef = React.useRef(null);
+
+      const handleImport = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const data = JSON.parse(ev.target.result);
+            if (!data.lifts || !data.history || !data.meta) {
+              alert("文件格式不正确：缺少必要数据字段。");
+              return;
+            }
+
+            const liftSummary = Object.entries(data.lifts)
+              .map(([id, l]) => `${LIFT_CONFIG[id]?.label || id}: Phase ${l.phase}, ${l.currentWeight}kg`)
+              .join("\n  ");
+
+            const msg = `即将导入:\n  ${liftSummary}\n  日志: ${data.history.length} 条\n  导出日期: ${data.exportDate?.slice(0, 10) || "未知"}\n\n确认覆盖当前数据？`;
+
+            if (confirm(msg)) {
+              storage.set("lifts", data.lifts);
+              storage.set("history", data.history);
+              storage.set("meta", data.meta);
+              window.location.reload();
+            }
+          } catch {
+            alert("文件解析失败，请选择有效的 .json 备份文件。");
+          }
+        };
+        reader.readAsText(file);
+        e.target.value = "";
+      };
+
+      return (
+        <React.Fragment>
+          <input ref={fileRef} type="file" accept=".json" onChange={handleImport} className="hidden" />
+          <button
+            onClick={() => fileRef.current && fileRef.current.click()}
+            className="flex-1 py-2.5 text-sm font-medium text-emerald-700 border border-emerald-200 rounded-xl
+                     hover:bg-emerald-50 active:scale-[0.98] transition"
+          >导入数据</button>
+        </React.Fragment>
+      );
+    }
+
+    function SettingsPanel({ lifts, updateLift, onResetOnboarding }) {
+      const handleWeightChange = (id, value) => {
+        const v = parseFloat(value);
+        if (isNaN(v) || v < 1) return;
+        updateLift(id, prev => ({
+          ...prev,
+          currentWeight: roundToAvailableWeight(v),
+        }));
+      };
+
+      const handlePhaseChange = (id, phase) => {
+        const p = parseInt(phase);
+        updateLift(id, prev => ({
+          ...prev,
+          phase: p,
+          sessionCount: 0,
+          targetMinReps: getMinReps(p === 1 ? LIFT_CONFIG[id].p1Sets : LIFT_CONFIG[id].p2HeavySets),
+        }));
+      };
+
+      const handleSessionCountChange = (id, value) => {
+        const v = parseInt(value);
+        if (isNaN(v) || v < 0) return;
+        updateLift(id, prev => ({ ...prev, sessionCount: v }));
+      };
+
+      const handleTargetMinRepsChange = (id, value) => {
+        const v = parseInt(value);
+        if (isNaN(v) || v < 1) return;
+        const cfg = LIFT_CONFIG[id];
+        const sesType = getSessionType(lifts[id].phase, lifts[id].sessionCount);
+        const sets = getSetsForPhase(lifts[id].phase, sesType, id);
+        const max = getMaxReps(sets);
+        updateLift(id, prev => ({
+          ...prev,
+          targetMinReps: Math.min(v, max),
+        }));
+      };
+
+      return (
+        <div className="px-4 py-6 space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">设置</h2>
+
+          {["squat", "bench", "deadlift"].map(id => {
+            const lift = lifts[id];
+            const cfg = LIFT_CONFIG[id];
+            const sesType = getSessionType(lift.phase, lift.sessionCount);
+            const sets = getSetsForPhase(lift.phase, sesType, id);
+            const maxReps = getMaxReps(sets);
+
+            return (
+              <div key={id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-slate-900">{cfg.label}</h3>
+                  <PhaseBadge phase={lift.phase} />
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-slate-500">训练重量</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text" inputMode="decimal"
+                        value={lift.currentWeight}
+                        onChange={e => handleWeightChange(id, e.target.value)}
+                        className="w-20 text-right px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono
+                                 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
+                      />
+                      <span className="text-sm text-slate-400">kg</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-slate-500">阶段</label>
+                    <select
+                      value={lift.phase}
+                      onChange={e => handlePhaseChange(id, e.target.value)}
+                      className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white"
+                    >
+                      <option value={1}>P1 纯新手</option>
+                      <option value={2}>P2 进阶新手</option>
+                      <option value={3}>P3 中级</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-slate-500">阶段训练次数</label>
+                    <input
+                      type="text" inputMode="numeric"
+                      value={lift.sessionCount}
+                      onChange={e => handleSessionCountChange(id, e.target.value)}
+                      className="w-16 text-right px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono
+                               focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-slate-500">目标最低次数</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text" inputMode="numeric"
+                        value={lift.targetMinReps}
+                        onChange={e => handleTargetMinRepsChange(id, e.target.value)}
+                        className="w-16 text-right px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono
+                                 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
+                      />
+                      <span className="text-xs text-slate-400">/ {maxReps}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+            <h3 className="font-semibold text-slate-900 mb-3">数据管理</h3>
+
+            <div className="flex gap-2 mb-2">
+              <ExportButton lifts={lifts} />
+              <ImportButton />
+            </div>
+
+            <button
+              onClick={() => {
+                if (confirm("确定要重新录入起始重量吗？当前训练数据不会被删除。")) {
+                  onResetOnboarding();
+                }
+              }}
+              className="w-full py-2.5 text-sm font-medium text-blue-600 border border-blue-200 rounded-xl
+                       hover:bg-blue-50 active:scale-[0.98] transition"
+            >
+              重新录入起始重量
+            </button>
+            <button
+              onClick={() => {
+                if (confirm("确定要清空所有训练日志吗？此操作不可撤销。")) {
+                  if (confirm("再次确认：清空所有训练日志？")) {
+                    localStorage.removeItem("ptw_history");
+                    window.location.reload();
+                  }
+                }
+              }}
+              className="w-full py-2.5 text-sm font-medium text-red-500 border border-red-200 rounded-xl
+                       hover:bg-red-50 active:scale-[0.98] transition mt-2"
+            >
+              清空训练日志
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const store = useStore();
+      const [activeTab, setActiveTab] = useState(store.meta.onboardingComplete ? "dashboard" : "onboarding");
+
+      useEffect(() => {
+        if (store.meta.onboardingComplete && activeTab === "onboarding") {
+          setActiveTab("dashboard");
+        }
+      }, [store.meta.onboardingComplete]);
+
+      if (!store.meta.onboardingComplete || activeTab === "onboarding") {
+        return (
+          <Onboarding onComplete={(weights) => {
+            store.completeOnboarding(weights);
+            setActiveTab("dashboard");
+          }} />
+        );
+      }
+
+      const tabs = [
+        { id: "dashboard", label: "面板", icon: "📊" },
+        { id: "session",  label: "训练", icon: "🏋️" },
+        { id: "log",      label: "日志", icon: "📋" },
+        { id: "settings", label: "设置", icon: "⚙️" },
+      ];
+
+      return (
+        <div className="max-w-lg mx-auto min-h-screen flex flex-col bg-slate-50">
+          {/* Header */}
+          <div className="bg-gradient-to-b from-slate-900 to-slate-800 text-white px-4 pt-12 pb-4">
+            <h1 className="text-lg font-bold">PTW Command Center</h1>
+            <p className="text-slate-400 text-xs mt-0.5">Powerlifting To Win 2.0</p>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 pb-20">
+            {activeTab === "dashboard" && (
+              <Dashboard
+                lifts={store.lifts}
+                history={store.history}
+                onStartSession={() => setActiveTab("session")}
+              />
+            )}
+            {activeTab === "session" && (
+              <SessionPlanner
+                lifts={store.lifts}
+                onSubmit={(data) => {
+                  store.submitSession(data);
+                  setActiveTab("log");
+                }}
+              />
+            )}
+            {activeTab === "log" && (
+              <HistoryLog
+                history={store.history}
+                lifts={store.lifts}
+                onDelete={store.deleteHistoryEntry}
+                onEdit={store.updateHistoryEntry}
+              />
+            )}
+            {activeTab === "settings" && (
+              <SettingsPanel
+                lifts={store.lifts}
+                updateLift={store.updateLift}
+                onResetOnboarding={() => {
+                  store.resetOnboarding();
+                  setActiveTab("onboarding");
+                }}
+              />
+            )}
+          </div>
+
+          {/* Bottom Tab Bar */}
+          <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-10"
+               style={{ paddingBottom: "var(--safe-area-inset-bottom, 0px)" }}>
+            <div className="max-w-lg mx-auto flex">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 flex flex-col items-center py-2.5 text-xs font-medium transition
+                    ${activeTab === tab.id ? "text-slate-900" : "text-slate-400"}`}
+                >
+                  <span className="text-lg mb-0.5">{tab.icon}</span>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </nav>
+        </div>
+      );
+    }
+
+    // === MOUNT ===
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+  </script>
+<script>
+if ('serviceWorker' in navigator) {
+  const CACHE_NAME = 'ptw-v3';
+  const CDN_URLS = [
+    'https://cdn.tailwindcss.com/',
+    'https://unpkg.com/react@18/umd/react.production.min.js',
+    'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
+  ];
+
+  const swCode = `
+    const CACHE = '${CACHE_NAME}';
+    const URLS = ['/', '${CDN_URLS.join("', '")}'];
+
+    self.addEventListener('install', e => {
+      e.waitUntil(
+        caches.open(CACHE).then(cache =>
+          Promise.allSettled(
+            URLS.map(url => cache.add(url).catch(err => console.log('SW cache skip:', url, err)))
+          )
+        )
+      );
+    });
+
+    self.addEventListener('fetch', e => {
+      if (e.request.method !== 'GET') return;
+      e.respondWith(
+        caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+          if (res && res.status === 200) {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(e.request, clone));
+          }
+          return res;
+        }).catch(() => {
+          if (e.request.mode === 'navigate') {
+            return caches.match('/');
+          }
+        }))
+      );
+    });
+
+    self.addEventListener('activate', e => {
+      e.waitUntil(
+        caches.keys().then(keys =>
+          Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+        )
+      );
+    });
+  `;
+
+  const swBlob = new Blob([swCode], { type: 'text/javascript' });
+  const swUrl = URL.createObjectURL(swBlob);
+
+  navigator.serviceWorker.register(swUrl, { scope: '/' }).catch(() => {});
+}
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 const fs = require("fs");
 const babel = require("@babel/core");
 
-let html = fs.readFileSync("index.html", "utf-8");
+let html = fs.readFileSync("source.html", "utf-8");
 
 // Step 1: Remove Babel standalone CDN
 html = html.replace(/  <script src="https:\/\/unpkg\.com\/@babel\/standalone\/babel\.min\.js"><\/script>\s*/g, "");
