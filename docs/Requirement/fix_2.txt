@@ -1,0 +1,29 @@
+1. 引入“双重递增法”与上下肢分离机制，重构 Data Model
+
+在每个动作的 state 中新增 targetMinReps 字段（默认值为该动作组数×3）。
+
+为每个动作配置 type: "upper" | "lower" 标签（Bench 为 upper，Squat/Deadlift 为 lower）。
+
+2. 适配特定杠铃片限制（最小片1.0kg，常用组合 1.0 / 2.5 / 3.5 / 5.0 kg）的独立加重矩阵
+
+加重判定依据：绝对忽略用户输入的 RPE，仅按当天该动作 Heavy day 的“完成总次数 (Total Reps)”落入的区间（Min勉强及格 / Mid正常发挥 / Max做满上限）进行计算。
+
+下肢 (Lower) 加重矩阵：
+
+Phase 1: Min: 维持原重, next targetMinReps = totalReps + 1 | Mid: +2.5kg | Max: +5.0kg
+
+Phase 2: Min: 维持原重, next targetMinReps = totalReps + 1 | Mid: +1.0kg | Max: +2.5kg
+
+上肢 (Upper) 加重矩阵：
+
+Phase 1: Min: 维持原重, next targetMinReps = totalReps + 1 | Mid: +1.0kg | Max: +2.5kg
+
+Phase 2: Min: 维持原重, next targetMinReps = totalReps + 1 | Mid: 维持原重, next targetMinReps = totalReps + 2 | Max: +1.0kg
+
+3. 重写熔断（Stall）与降重数学函数
+
+当日只要出现任意一组 reps < 3，立刻触发阶段跃迁（P1 升 P2，或 P2 升 P3）。
+
+触发跃迁时，重置该动作的 sessionCount = 0 及 targetMinReps。
+
+降重算法修正：实现 roundToAvailableWeight(weight)。因健身房硬件限制，杠铃总重量尾数必然是 0.5 的倍数。当执行 -10% 降重时，必须向下取整（Floor）到最接近的 0.5kg 倍数（公式：Math.floor(weight * 2) / 2）。

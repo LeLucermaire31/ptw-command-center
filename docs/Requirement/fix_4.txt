@@ -1,0 +1,64 @@
+以下是具体的漏洞分析以及修正方案：
+
+### 🚨 核心逻辑漏洞：动态目标 vs 绝对下限
+
+在文档的 `2. 次数区间判定` 中，你目前的逻辑是：
+
+> `INPUT: totalReps, minReps (下限), maxReps (上限)`
+> `totalReps == minReps → "min"`
+> `minReps < totalReps < maxReps → "mid"`
+
+**场景推演（Bug 是怎么产生的）：**
+
+1. 假设你这周卧推 P2（5组，上限30次）。你的初始 `targetMinReps` 是 15次（5组x3次）。
+2. 你推了 15 次。落入 `min` 区间，触发双重递增：**重量不变，下周 `targetMinReps` 变成了 17 次**（因为上肢 P2 规定 targetMinReps += 2）。
+3. 到了下周，你非常努力，但只推了 **16 次**（没有达到 17 次的目标，但大于绝对下限 15 次）。
+4. **Bug 出现：** 根据目前的引擎逻辑，`minReps`（15） < `totalReps`（16） < `maxReps`（30）。系统会判定你落入了 **"mid" (正常发挥)** 区间！
+5. **荒谬的结果：** 你明明连 17 次的挑战目标都没完成，系统却判定你“正常发挥”，并在你下次训练时**给你加重 1.0kg**（或者错误地再次触发 target += 2）。
+
+### 🛠️ 修正方案：引入 "Missed Target" 状态
+
+既然引入了 `targetMinReps` 作为“动态及格线”，我们的判定标准就必须从“绝对下限”升级为“动态目标”。你需要对第 2 和第 4 节进行微调：
+
+#### 修改 1：重写“次数区间判定” (`getRepTier`)
+
+将原来的 `minReps` 替换为传入当天的 `targetMinReps`。
+
+```javascript
+INPUT:  totalReps, targetMinReps (动态目标), maxReps (上限)
+OUTPUT: "missed" | "min" | "mid" | "maxed"
+
+totalReps < targetMinReps      → "missed"  // 没完成目标，但也没跌破单组<3的底线
+totalReps == targetMinReps     → "min"     // 刚刚好踩线
+targetMinReps < totalReps < maxReps → "mid" // 超额完成，但没拉满
+totalReps >= maxReps           → "maxed"   // 拉满
+
+```
+
+#### 修改 2：更新 Progression 计算引擎
+
+在第 4 节的算法中，增加对 `"missed"` 状态的处理逻辑：不加重，目标次数也不变（给你下周再挑战一次的机会）。
+
+```javascript
+否则 (单组没有 <3 的情况):
+  stalled = false
+  tier = getRepTier(totalReps, targetMinReps, sets×6) // 注意这里传的是 targetMinReps
+  
+  if (tier === "missed") {
+    // 没达到动态目标，原地踏步，再试一次
+    newWeight = currentWeight
+    newTargetMinReps = targetMinReps
+  } else {
+    // 查加重矩阵 → {weightDelta, targetMinRepsDelta}
+    newWeight = currentWeight + weightDelta
+    newTargetMinReps = (weightDelta == 0)
+      ? targetMinReps + targetMinRepsDelta
+      : sets × 3
+  }
+
+  // 加上你写的终极安全锁
+  newTargetMinReps = Math.min(newTargetMinReps, sets × 6)
+
+```
+
+---
