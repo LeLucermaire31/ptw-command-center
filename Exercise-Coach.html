@@ -1405,65 +1405,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 </script>
 <script>
 if ('serviceWorker' in navigator) {
-  const CACHE_NAME = 'ptw-v5';
-  const CDN_URLS = [
-    'https://cdn.tailwindcss.com/',
-    'https://unpkg.com/react@18/umd/react.production.min.js',
-    'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  ];
-
-  const swCode = `
-    const CACHE = '${CACHE_NAME}';
-    const URLS = ['/', '/Exercise-Coach.html', '${CDN_URLS.join("', '")}'];
-
-    self.addEventListener('install', e => {
-      e.waitUntil(
-        caches.open(CACHE).then(cache =>
-          Promise.allSettled(
-            URLS.map(url => cache.add(url).catch(err => console.log('SW cache skip:', url, err)))
-          )
-        )
-      );
-    });
-
-    self.addEventListener('fetch', e => {
-      if (e.request.method !== 'GET') return;
-      if (e.request.mode === 'navigate') {
-        e.respondWith(
-          fetch(e.request).then(res => {
-            if (res && res.status === 200) {
-              const clone = res.clone();
-              caches.open(CACHE).then(c => c.put(e.request, clone));
-            }
-            return res;
-          }).catch(() => caches.match('/Exercise-Coach.html').then(r => r || caches.match('/')))
-        );
-      } else {
-        e.respondWith(
-          caches.match(e.request).then(r => r || fetch(e.request).then(res => {
-            if (res && res.status === 200) {
-              const clone = res.clone();
-              caches.open(CACHE).then(c => c.put(e.request, clone));
-            }
-            return res;
-          }))
-        );
-      }
-    });
-
-    self.addEventListener('activate', e => {
-      e.waitUntil(
-        caches.keys().then(keys =>
-          Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-        )
-      );
-    });
-  `;
-
-  const swBlob = new Blob([swCode], { type: 'text/javascript' });
-  const swUrl = URL.createObjectURL(swBlob);
-
-  navigator.serviceWorker.register(swUrl, { scope: '/' }).catch(() => {});
+  navigator.serviceWorker.register('sw.js', { scope: '/' }).catch(() => {});
 }
 </script>
 </body>
