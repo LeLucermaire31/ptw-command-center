@@ -1304,7 +1304,7 @@
   </script>
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js', { scope: '/' }).catch(() => {});
+  navigator.serviceWorker.register('sw.js', { scope: '/ptw-command-center/' }).catch(err => console.log('SW:', err));
 }
 </script>
 </body>
