@@ -1165,13 +1165,14 @@ function SettingsPanel({
   updateLift,
   onResetOnboarding
 }) {
-  const handleWeightChange = (id, value) => {
-    const v = parseFloat(value);
-    if (isNaN(v) || v < 1) return;
-    updateLift(id, prev => ({
-      ...prev,
-      currentWeight: roundToAvailableWeight(v)
-    }));
+  const commitWeight = (id, raw) => {
+    const v = parseFloat(raw);
+    if (!isNaN(v) && v >= 1) {
+      updateLift(id, prev => ({
+        ...prev,
+        currentWeight: roundToAvailableWeight(v)
+      }));
+    }
   };
   const handlePhaseChange = (id, phase) => {
     const p = parseInt(phase);
@@ -1182,25 +1183,27 @@ function SettingsPanel({
       targetMinReps: getMinReps(p === 1 ? LIFT_CONFIG[id].p1Sets : LIFT_CONFIG[id].p2HeavySets)
     }));
   };
-  const handleSessionCountChange = (id, value) => {
-    const v = parseInt(value);
-    if (isNaN(v) || v < 0) return;
-    updateLift(id, prev => ({
-      ...prev,
-      sessionCount: v
-    }));
+  const commitSessionCount = (id, raw) => {
+    const v = parseInt(raw);
+    if (!isNaN(v) && v >= 0) {
+      updateLift(id, prev => ({
+        ...prev,
+        sessionCount: v
+      }));
+    }
   };
-  const handleTargetMinRepsChange = (id, value) => {
-    const v = parseInt(value);
-    if (isNaN(v) || v < 1) return;
-    const cfg = LIFT_CONFIG[id];
-    const sesType = getSessionType(lifts[id].phase, lifts[id].sessionCount);
-    const sets = getSetsForPhase(lifts[id].phase, sesType, id);
-    const max = getMaxReps(sets);
-    updateLift(id, prev => ({
-      ...prev,
-      targetMinReps: Math.min(v, max)
-    }));
+  const commitTargetMinReps = (id, raw) => {
+    const v = parseInt(raw);
+    if (!isNaN(v) && v >= 1) {
+      const cfg = LIFT_CONFIG[id];
+      const sesType = getSessionType(lifts[id].phase, lifts[id].sessionCount);
+      const sets = getSetsForPhase(lifts[id].phase, sesType, id);
+      const max = getMaxReps(sets);
+      updateLift(id, prev => ({
+        ...prev,
+        targetMinReps: Math.min(v, max)
+      }));
+    }
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "px-4 py-6 space-y-4"
@@ -1230,10 +1233,14 @@ function SettingsPanel({
     }, "\u8BAD\u7EC3\u91CD\u91CF"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("input", {
+      key: id + "-w-" + lift.currentWeight,
       type: "text",
       inputMode: "decimal",
-      value: lift.currentWeight,
-      onChange: e => handleWeightChange(id, e.target.value),
+      defaultValue: lift.currentWeight,
+      onBlur: e => {
+        commitWeight(id, e.target.value);
+        if (isNaN(parseFloat(e.target.value)) || parseFloat(e.target.value) < 1) e.target.value = lift.currentWeight;
+      },
       className: "w-20 text-right px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
     }), /*#__PURE__*/React.createElement("span", {
       className: "text-sm text-slate-400"
@@ -1256,10 +1263,14 @@ function SettingsPanel({
     }, /*#__PURE__*/React.createElement("label", {
       className: "text-sm text-slate-500"
     }, "\u9636\u6BB5\u8BAD\u7EC3\u6B21\u6570"), /*#__PURE__*/React.createElement("input", {
+      key: id + "-sc-" + lift.sessionCount,
       type: "text",
       inputMode: "numeric",
-      value: lift.sessionCount,
-      onChange: e => handleSessionCountChange(id, e.target.value),
+      defaultValue: lift.sessionCount,
+      onBlur: e => {
+        commitSessionCount(id, e.target.value);
+        if (isNaN(parseInt(e.target.value)) || parseInt(e.target.value) < 0) e.target.value = lift.sessionCount;
+      },
       className: "w-16 text-right px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between"
@@ -1268,10 +1279,14 @@ function SettingsPanel({
     }, "\u76EE\u6807\u6700\u4F4E\u6B21\u6570"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1"
     }, /*#__PURE__*/React.createElement("input", {
+      key: id + "-tmr-" + lift.targetMinReps,
       type: "text",
       inputMode: "numeric",
-      value: lift.targetMinReps,
-      onChange: e => handleTargetMinRepsChange(id, e.target.value),
+      defaultValue: lift.targetMinReps,
+      onBlur: e => {
+        commitTargetMinReps(id, e.target.value);
+        if (isNaN(parseInt(e.target.value)) || parseInt(e.target.value) < 1) e.target.value = lift.targetMinReps;
+      },
       className: "w-16 text-right px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
     }), /*#__PURE__*/React.createElement("span", {
       className: "text-xs text-slate-400"
@@ -1390,7 +1405,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 </script>
 <script>
 if ('serviceWorker' in navigator) {
-  const CACHE_NAME = 'ptw-v3';
+  const CACHE_NAME = 'ptw-v4';
   const CDN_URLS = [
     'https://cdn.tailwindcss.com/',
     'https://unpkg.com/react@18/umd/react.production.min.js',
@@ -1399,7 +1414,7 @@ if ('serviceWorker' in navigator) {
 
   const swCode = `
     const CACHE = '${CACHE_NAME}';
-    const URLS = ['/', '${CDN_URLS.join("', '")}'];
+    const URLS = ['/', '/Exercise-Coach.html', '${CDN_URLS.join("', '")}'];
 
     self.addEventListener('install', e => {
       e.waitUntil(
@@ -1422,7 +1437,7 @@ if ('serviceWorker' in navigator) {
           return res;
         }).catch(() => {
           if (e.request.mode === 'navigate') {
-            return caches.match('/');
+            return caches.match('/Exercise-Coach.html').then(r => r || caches.match('/'));
           }
         }))
       );
