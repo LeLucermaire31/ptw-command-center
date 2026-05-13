@@ -1304,7 +1304,7 @@
   </script>
 <script>
 if ('serviceWorker' in navigator) {
-  const CACHE_NAME = 'ptw-v4';
+  const CACHE_NAME = 'ptw-v5';
   const CDN_URLS = [
     'https://cdn.tailwindcss.com/',
     'https://unpkg.com/react@18/umd/react.production.min.js',
@@ -1327,19 +1327,27 @@ if ('serviceWorker' in navigator) {
 
     self.addEventListener('fetch', e => {
       if (e.request.method !== 'GET') return;
-      e.respondWith(
-        caches.match(e.request).then(r => r || fetch(e.request).then(res => {
-          if (res && res.status === 200) {
-            const clone = res.clone();
-            caches.open(CACHE).then(c => c.put(e.request, clone));
-          }
-          return res;
-        }).catch(() => {
-          if (e.request.mode === 'navigate') {
-            return caches.match('/Exercise-Coach.html').then(r => r || caches.match('/'));
-          }
-        }))
-      );
+      if (e.request.mode === 'navigate') {
+        e.respondWith(
+          fetch(e.request).then(res => {
+            if (res && res.status === 200) {
+              const clone = res.clone();
+              caches.open(CACHE).then(c => c.put(e.request, clone));
+            }
+            return res;
+          }).catch(() => caches.match('/Exercise-Coach.html').then(r => r || caches.match('/')))
+        );
+      } else {
+        e.respondWith(
+          caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+            if (res && res.status === 200) {
+              const clone = res.clone();
+              caches.open(CACHE).then(c => c.put(e.request, clone));
+            }
+            return res;
+          }))
+        );
+      }
     });
 
     self.addEventListener('activate', e => {
